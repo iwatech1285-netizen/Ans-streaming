@@ -1,0 +1,6 @@
+{
+  "name": "Ans Anime",
+  "description": "Minimalist black-and-white anime streaming platform with advanced video embed management, direct video uploads, live player preview, and single-admin dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
