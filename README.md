@@ -4,42 +4,44 @@ A responsive luxury **Black & White (Monochrome Noir)** anime streaming web appl
 
 ---
 
-## Why GitHub Showed a White Screen (And How It's Fixed)
+## Fixing the "Stuck Loading Screen" on GitHub Pages
 
-When hosting a Vite / React SPA on **GitHub Pages**, a blank white screen usually occurs because of two reasons:
+The pre-loader spinner stays stuck on screen on GitHub when the browser cannot execute uncompiled TypeScript (`/src/main.tsx`). GitHub Pages is a static host and cannot parse raw TypeScript without a compiled JavaScript bundle.
 
-1. **Absolute Asset Paths (`/assets/...`)**:
-   By default, Vite compiles asset paths with a leading slash `/assets/...`. When hosted under a GitHub repository subpath (such as `https://<username>.github.io/<repo-name>/`), the browser looks for scripts at the root domain `https://<username>.github.io/assets/...` instead of inside your repository folder. This causes a `404 Not Found` error for both JavaScript and CSS, leaving a blank white screen.
-   - **Fix Applied**: Configured `base: './'` in `vite.config.ts`. All assets now use relative paths (`./assets/...`) and load reliably regardless of repo name or domain.
+### How We Solved It (Triple-Layer Support):
 
-2. **Unbuilt `.tsx` Source Code**:
-   GitHub Pages serves static HTML, CSS, and JS. Browsers cannot parse uncompiled TypeScript (`.tsx`) files directly.
-   - **Fix Applied**: Added `.github/workflows/deploy.yml` which automatically runs `npm run build` and publishes the compiled `dist/` bundle to GitHub Pages whenever you push to `main`.
-
-3. **Runtime Error Recovery**:
-   - Added a global `ErrorBoundary` in `src/components/ErrorBoundary.tsx` so any local storage or network glitch shows an interactive recovery screen instead of a blank white page.
-   - Added an initial dark loader inside `index.html` so you never see a jarring white flash on initial page load.
+1. **Pre-Built `docs/` & `assets/` Directories Added Directly to Repository**:
+   - The compiled production bundle (`assets/index.js` and `assets/index.css`) and `docs/` folder are now pre-built and tracked in the repository (removed from `.gitignore`).
+2. **Auto-Fallback in Root `index.html`**:
+   - If GitHub Pages serves from root `/` and the browser encounters unbundled TypeScript, an automatic event listener immediately loads `./assets/index.js` to mount React and dismiss the loader.
+3. **Safety Timeout**:
+   - Added an automatic 4-second safety timeout that provides a manual refresh trigger if assets are throttled or blocked by aggressive extensions.
 
 ---
 
-## How to Deploy on GitHub Pages
+## How to Set Up GitHub Pages (3 Easy Ways — All Supported)
 
-### Method 1: Automatic via GitHub Actions (Recommended)
+### Option A: Point GitHub Pages to `/docs` Folder (Instant — 10 Seconds)
+1. Go to your repository on GitHub.
+2. Click **Settings** &rarr; **Pages** (in the left sidebar).
+3. Under **Build and deployment**:
+   - **Source**: `Deploy from a branch`
+   - **Branch**: `main` (or `master`)
+   - **Folder**: select **`/docs`** (instead of `/ (root)`)
+   - Click **Save**.
+4. That's it! GitHub will serve `docs/index.html` directly with the pre-compiled production bundle!
 
-1. Push your repository to GitHub (`main` or `master` branch).
-2. Go to your repository on GitHub:
-   - Click **Settings** &rarr; **Pages** (in the left sidebar).
-3. Under **Build and deployment** &rarr; **Source**:
-   - Select **GitHub Actions** (instead of "Deploy from a branch").
-4. The included workflow (`.github/workflows/deploy.yml`) will automatically trigger, build the project, and publish your site!
-5. Your anime site will be live at `https://<username>.github.io/<repo-name>/` with working video streaming!
+---
 
-### Method 2: Manual Build & Push (`dist/` folder)
+### Option B: Use GitHub Actions (Automatic CI/CD)
+1. In your GitHub repository: **Settings** &rarr; **Pages**.
+2. Under **Build and deployment** &rarr; **Source**: select **GitHub Actions**.
+3. The included workflow file (`.github/workflows/deploy.yml`) will build and deploy on every push.
 
-If you prefer uploading built files manually:
-1. Run `npm run build` in your terminal.
-2. The compiled static website is generated in the `dist/` directory.
-3. Upload the contents of `dist/` to your `gh-pages` branch, or into InfinityFree `htdocs/`.
+---
+
+### Option C: Serve from Root `/ (root)`
+If your repository is already set to `Branch: main, Folder: / (root)`, the root `index.html` will automatically detect the static environment and load the pre-compiled `assets/index.js` bundle.
 
 ---
 
@@ -49,7 +51,7 @@ If you prefer uploading built files manually:
   - Universal iframe embeds (YouTube, Google Drive, Streamtape, Mega, Vimeo, etc.).
   - Keyboard navigation: `P` (Previous Episode), `N` (Next Episode), `T` (Theater Mode).
 - **Master Admin Panel**:
-  - Single master admin password security.
+  - Single master admin password security (no password reset bypass).
   - Dedicated **Media Embedding & Video Manager** with live preview.
   - Episode manager with multi-server tagging.
   - One-click `.json` database backup and restore.

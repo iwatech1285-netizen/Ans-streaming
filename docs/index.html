@@ -16,7 +16,8 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
     
     <!-- Production stylesheet fallback for direct GitHub Pages / (root) deployment -->
-    <link rel="stylesheet" href="./assets/index.css" />
+    <script type="module" crossorigin src="./assets/index.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index.css">
   </head>
   <body class="bg-black text-white antialiased selection:bg-white selection:text-black m-0 p-0 overflow-x-hidden">
     <div id="root">
@@ -35,9 +36,7 @@
             Refresh Page
           </button>
         </div>
-        <style>
-          @keyframes spin { to { transform: rotate(360deg); } }
-        </style>
+        <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
       </div>
     </div>
     
@@ -49,7 +48,6 @@
     </noscript>
 
     <!-- Primary Vite Entry Point (Bundled by Vite on build, transformed in dev) -->
-    <script type="module" src="/src/main.tsx"></script>
 
     <!-- Static Production Fallback Loader:
          If deployed directly on GitHub Pages root / without a build step,
