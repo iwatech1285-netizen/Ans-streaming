@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Anime, Episode, ViewState } from '../types';
 import { getAnimeById, getEpisodes, getWatchlist, toggleWatchlist } from '../services/dataService';
 import { Play, Bookmark, ArrowLeft, Film, Layers } from 'lucide-react';
+import { AdsterraBanner300x250 } from './AdsterraBanner300x250';
 
 interface AnimeDetailsProps {
   animeId: string;
@@ -169,6 +170,9 @@ export const AnimeDetails: React.FC<AnimeDetailsProps> = ({ animeId, onNavigate,
           </div>
         )}
       </section>
+
+      {/* Adsterra 300x250 Banner Ad */}
+      <AdsterraBanner300x250 label="Sponsored Recommendation" className="mt-8" />
 
     </div>
   );

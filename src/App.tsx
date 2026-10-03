@@ -18,6 +18,8 @@ import { WatchPlayer } from './components/WatchPlayer';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AdminLogin } from './components/AdminLogin';
 import { AdminEmbedGuideModal } from './components/AdminEmbedGuideModal';
+import { AdsterraAds } from './components/AdsterraAds';
+import { AdsterraBanner300x250 } from './components/AdsterraBanner300x250';
 import { Play, Sparkles, Film, ArrowRight, Video } from 'lucide-react';
 
 export default function App() {
@@ -107,6 +109,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col selection:bg-white selection:text-black">
+      {/* Adsterra Popunder & Socialbar Monetization */}
+      <AdsterraAds />
       
       {/* Top Navbar */}
       <Navbar
@@ -185,6 +189,9 @@ export default function App() {
                 </div>
               </section>
             )}
+
+            {/* Adsterra 300x250 Sponsored Spotlight Banner */}
+            <AdsterraBanner300x250 label="Sponsored Spotlight" className="my-6" />
 
             {/* Catalog Section */}
             <section id="catalog-section" className="my-10">

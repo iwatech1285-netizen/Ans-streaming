@@ -17,6 +17,7 @@ import {
   Layers,
   Sparkles
 } from 'lucide-react';
+import { AdsterraBanner300x250 } from './AdsterraBanner300x250';
 
 interface WatchPlayerProps {
   animeId: string;
@@ -404,6 +405,9 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({ animeId, episodeId, on
               )}
             </div>
           </div>
+
+          {/* Adsterra 300x250 Banner Ad */}
+          <AdsterraBanner300x250 label="Sponsored Partner" />
         </div>
 
       </div>
