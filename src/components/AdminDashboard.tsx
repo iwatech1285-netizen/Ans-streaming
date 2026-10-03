@@ -25,7 +25,8 @@ import {
   HelpCircle,
   Layers,
   Video,
-  Database
+  Database,
+  KeyRound
 } from 'lucide-react';
 import { MediaEmbedModal } from './MediaEmbedModal';
 import { AnimeModal } from './AnimeModal';
@@ -33,6 +34,7 @@ import { EpisodeManagerModal } from './EpisodeManagerModal';
 import { AdminEmbedGuideModal } from './AdminEmbedGuideModal';
 import { BackupModal } from './BackupModal';
 import { SupabaseSqlModal } from './SupabaseSqlModal';
+import { ChangePasswordModal } from './ChangePasswordModal';
 
 interface AdminDashboardProps {
   onNavigate: (view: ViewState) => void;
@@ -55,6 +57,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, onLo
   const [isGuideModalOpen, setIsGuideModalOpen] = useState(false);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [adminEmail, setAdminEmail] = useState(adminSession?.email || 'anasnew1285@gmail.com');
 
   const [deleteConfirmAnime, setDeleteConfirmAnime] = useState<Anime | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -138,9 +142,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, onLo
             <div className="hidden sm:flex items-center gap-2 text-xs text-neutral-400">
               <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
               <span className="text-white font-medium truncate max-w-[180px]">
-                {adminSession?.email || 'Master Admin'}
+                {adminEmail}
               </span>
             </div>
+
+            <button
+              onClick={() => setIsPasswordModalOpen(true)}
+              className="px-2.5 py-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-white/10 hover:border-white/30 text-xs text-neutral-300 hover:text-white transition-colors flex items-center gap-1.5"
+              title="Change master admin email or password"
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Change Password</span>
+            </button>
 
             <button
               onClick={() => onNavigate({ type: 'home' })}
@@ -525,6 +538,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, onLo
       <SupabaseSqlModal
         isOpen={isSqlModalOpen}
         onClose={() => setIsSqlModalOpen(false)}
+      />
+
+      {/* Master Admin Change Password Modal */}
+      <ChangePasswordModal
+        isOpen={isPasswordModalOpen}
+        onClose={() => setIsPasswordModalOpen(false)}
+        currentEmail={adminEmail}
+        onSuccess={(newEmail) => {
+          setAdminEmail(newEmail);
+          showToast('Master admin credentials updated in Supabase cloud!');
+        }}
       />
 
     </div>

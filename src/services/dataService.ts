@@ -529,6 +529,9 @@ export function getLatestEpisodesFeed(limitCount: number = 8): LatestEpisodeFeed
 // Master Admin Security (Single Admin Enforced in Supabase & PostgreSQL)
 // =========================================================================
 
+export const MASTER_ADMIN_EMAIL = 'anasnew1285@gmail.com';
+export const MASTER_ADMIN_PASSWORD_HASH = 'ZS5WaFUyK2tQNGNVZWFx'; // btoa('e.VhU2+kP4cUeaq')
+
 /**
  * Checks if master admin exists in local cache (sync check for instant UI)
  */
@@ -544,27 +547,53 @@ export function checkAdminStatus(): { exists: boolean; email?: string } {
   } catch {
     // fallback
   }
-  return { exists: false };
+  return { exists: true, email: MASTER_ADMIN_EMAIL };
 }
 
 /**
- * Checks Supabase PostgreSQL admin_users table asynchronously
+ * Checks Supabase PostgreSQL admin_users table asynchronously.
+ * Automatically synchronizes between Supabase cloud and device localStorage.
  */
 export async function checkAdminStatusFromSupabase(): Promise<{ exists: boolean; email?: string }> {
   try {
+    // 1. Query Supabase cloud database
     const { data, error } = await supabase
       .from('admin_users')
-      .select('id, email')
+      .select('id, email, password_hash')
       .eq('id', 'master_admin')
       .maybeSingle();
 
     if (!error && data && data.email) {
-      // Keep local cache in sync
-      localStorage.setItem(STORAGE_ADMIN_KEY, JSON.stringify({ email: data.email, createdAt: Date.now() }));
+      // Cloud database has master admin -> sync to this device
+      localStorage.setItem(STORAGE_ADMIN_KEY, JSON.stringify({ 
+        email: data.email, 
+        passwordHash: data.password_hash,
+        createdAt: Date.now() 
+      }));
       return { exists: true, email: data.email };
     }
+
+    // 2. If Supabase is empty, check if this device created an admin in localStorage
+    const localRaw = localStorage.getItem(STORAGE_ADMIN_KEY);
+    if (localRaw) {
+      try {
+        const parsed = JSON.parse(localRaw);
+        if (parsed && parsed.email && parsed.passwordHash) {
+          // Push this phone's existing admin credentials up to Supabase!
+          await supabase.from('admin_users').upsert({
+            id: 'master_admin',
+            email: parsed.email.trim().toLowerCase(),
+            password_hash: parsed.passwordHash,
+            created_at: parsed.createdAt || Date.now(),
+          });
+          return { exists: true, email: parsed.email };
+        }
+      } catch {
+        // ignore
+      }
+    }
   } catch (err) {
-    console.warn('Supabase admin check skipped:', err);
+    console.warn('Supabase admin check error:', err);
   }
   return checkAdminStatus();
 }
@@ -587,11 +616,13 @@ export async function createFirstAdmin(email: string, password: string): Promise
       .maybeSingle();
 
     if (existing && existing.email) {
+      // Keep local in sync
+      localStorage.setItem(STORAGE_ADMIN_KEY, JSON.stringify({ email: existing.email, createdAt: Date.now() }));
       throw new Error('Registration is permanently locked. A master administrator account already exists.');
     }
 
     // Insert with fixed primary key 'master_admin'
-    const { error: insertErr } = await supabase.from('admin_users').insert({
+    const { error: insertErr } = await supabase.from('admin_users').upsert({
       id: 'master_admin',
       email: cleanEmail,
       password_hash: passwordHash,
@@ -611,7 +642,7 @@ export async function createFirstAdmin(email: string, password: string): Promise
     console.warn('Supabase admin check fallback:', err);
   }
 
-  // 2. Also save to local backup
+  // 2. Save to device local backup
   const newAdmin: AdminUser = {
     email: cleanEmail,
     passwordHash,
@@ -624,6 +655,42 @@ export async function createFirstAdmin(email: string, password: string): Promise
 }
 
 /**
+ * Updates master admin credentials in Supabase and local cache.
+ */
+export async function updateMasterAdminCredentials(newEmail: string, newPassword?: string): Promise<boolean> {
+  const cleanEmail = newEmail.trim().toLowerCase();
+  const updates: any = {
+    email: cleanEmail,
+    created_at: Date.now(),
+  };
+  if (newPassword && newPassword.length >= 6) {
+    updates.password_hash = btoa(newPassword);
+  }
+
+  try {
+    const { error } = await supabase
+      .from('admin_users')
+      .update(updates)
+      .eq('id', 'master_admin');
+
+    if (!error) {
+      const current = localStorage.getItem(STORAGE_ADMIN_KEY);
+      const parsed = current ? JSON.parse(current) : {};
+      localStorage.setItem(STORAGE_ADMIN_KEY, JSON.stringify({
+        ...parsed,
+        email: cleanEmail,
+        ...(newPassword ? { passwordHash: btoa(newPassword) } : {}),
+      }));
+      setAdminSession({ email: cleanEmail, timestamp: Date.now() });
+      return true;
+    }
+  } catch (err) {
+    console.warn('Failed updating credentials in Supabase:', err);
+  }
+  return false;
+}
+
+/**
  * Authenticates admin credentials against Supabase cloud database
  */
 export async function loginAdmin(email: string, password: string): Promise<AdminSession> {
@@ -631,6 +698,7 @@ export async function loginAdmin(email: string, password: string): Promise<Admin
   const passwordHash = btoa(password);
 
   let authenticated = false;
+  let resolvedEmail = cleanEmail;
 
   // 1. Check against Supabase cloud database
   try {
@@ -641,32 +709,47 @@ export async function loginAdmin(email: string, password: string): Promise<Admin
       .maybeSingle();
 
     if (!error && adminRow) {
-      if (adminRow.email === cleanEmail && adminRow.password_hash === passwordHash) {
+      resolvedEmail = adminRow.email;
+      const passMatches = adminRow.password_hash === passwordHash;
+      // Allow login if password matches and (email matches or email was prefilled)
+      const emailMatches = !cleanEmail || adminRow.email.toLowerCase() === cleanEmail;
+
+      if (passMatches && emailMatches) {
         authenticated = true;
+        // Keep device local storage synchronized with cloud
+        localStorage.setItem(STORAGE_ADMIN_KEY, JSON.stringify({ 
+          email: adminRow.email, 
+          passwordHash: adminRow.password_hash, 
+          createdAt: Date.now() 
+        }));
       } else {
-        throw new Error('Invalid email or master password.');
+        throw new Error('Invalid master password or administrator email.');
       }
     }
   } catch (err: any) {
-    if (err.message && err.message.includes('Invalid email')) {
+    if (err.message && err.message.includes('Invalid')) {
       throw err;
     }
     console.warn('Supabase auth fallback:', err);
   }
 
-  // 2. If Supabase table doesn't exist yet or is offline, check local storage
+  // 2. If Supabase table was unreachable, check device storage
   if (!authenticated) {
     const raw = localStorage.getItem(STORAGE_ADMIN_KEY);
     if (!raw) {
       throw new Error('No administrator account exists yet. Create the master admin account first.');
     }
     const admin: AdminUser = JSON.parse(raw);
-    if (admin.email !== cleanEmail || admin.passwordHash !== passwordHash) {
+    resolvedEmail = admin.email;
+    const passMatches = admin.passwordHash === passwordHash;
+    const emailMatches = !cleanEmail || admin.email === cleanEmail;
+
+    if (!passMatches || !emailMatches) {
       throw new Error('Invalid email or password.');
     }
   }
 
-  const session: AdminSession = { email: cleanEmail, timestamp: Date.now() };
+  const session: AdminSession = { email: resolvedEmail, timestamp: Date.now() };
   setAdminSession(session);
   return session;
 }

@@ -21,7 +21,7 @@ import { AdminEmbedGuideModal } from './components/AdminEmbedGuideModal';
 import { Play, Sparkles, Film, ArrowRight, Video } from 'lucide-react';
 
 export default function App() {
-  const [catalog, setCatalog] = useState<Anime[]>([]);
+  const [catalog, setCatalog] = useState<Anime[]>(() => loadCatalog());
   const [currentView, setCurrentView] = useState<ViewState>({ type: 'home' });
   const [selectedGenre, setSelectedGenre] = useState<string>('All');
   const [watchlistTrigger, setWatchlistTrigger] = useState(0);

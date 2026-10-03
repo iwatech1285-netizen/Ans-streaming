@@ -67,6 +67,7 @@ DROP POLICY IF EXISTS "Allow public write on episodes" ON public.episodes;
 DROP POLICY IF EXISTS "Allow read on admin_users" ON public.admin_users;
 DROP POLICY IF EXISTS "Allow insert on admin_users" ON public.admin_users;
 DROP POLICY IF EXISTS "Allow update on admin_users" ON public.admin_users;
+DROP POLICY IF EXISTS "Allow delete on admin_users" ON public.admin_users;
 
 -- 6. RLS Policies for Animes
 -- Anyone can view the anime catalog
@@ -109,6 +110,11 @@ CREATE POLICY "Allow update on admin_users"
   USING (id = 'master_admin')
   WITH CHECK (id = 'master_admin');
 
+-- Allow delete on admin_users
+CREATE POLICY "Allow delete on admin_users" 
+  ON public.admin_users FOR DELETE 
+  USING (id = 'master_admin');
+
 -- 9. Enable Realtime Replication for instant live updates across all devices
 DO $$
 BEGIN
@@ -119,6 +125,11 @@ BEGIN
   END;
   BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.episodes;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.admin_users;
   EXCEPTION WHEN duplicate_object THEN
     NULL;
   END;

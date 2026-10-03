@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ViewState } from '../types';
 import { checkAdminStatus, checkAdminStatusFromSupabase, createFirstAdmin, loginAdmin } from '../services/dataService';
+import { supabase } from '../services/supabaseClient';
 import { Play, Shield, Lock, Mail, ArrowLeft, AlertCircle, Database, Code } from 'lucide-react';
 import { SupabaseSqlModal } from './SupabaseSqlModal';
 
@@ -10,7 +11,8 @@ interface AdminLoginProps {
 }
 
 export const AdminLogin: React.FC<AdminLoginProps> = ({ onNavigate, onLoginSuccess }) => {
-  const [adminExists, setAdminExists] = useState(false);
+  const [adminExists, setAdminExists] = useState(true);
+  const [isCheckingCloud, setIsCheckingCloud] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -19,20 +21,34 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onNavigate, onLoginSucce
   const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
 
   useEffect(() => {
-    // 1. Instant check from local cache
-    const cached = checkAdminStatus();
-    if (cached.exists) {
-      setAdminExists(true);
-      if (cached.email) setEmail(cached.email);
-    }
+    let isMounted = true;
 
-    // 2. Cloud check from Supabase PostgreSQL database
-    checkAdminStatusFromSupabase().then((status) => {
-      setAdminExists(status.exists);
-      if (status.email) {
-        setEmail(status.email);
-      }
-    }).catch(() => {});
+    // Check Supabase cloud database
+    checkAdminStatusFromSupabase()
+      .then((status) => {
+        if (!isMounted) return;
+        setAdminExists(status.exists);
+        // Do NOT autofill email or password as requested by user
+      })
+      .catch(() => {
+        if (!isMounted) return;
+      });
+
+    // Realtime listener for status changes
+    const channel = supabase
+      .channel('realtime_admin_auth_status')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'admin_users' }, (payload) => {
+        if (!isMounted) return;
+        if (payload.new) {
+          setAdminExists(true);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -98,7 +114,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onNavigate, onLoginSucce
 
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-950/60 border border-emerald-500/30 text-[11px] font-semibold text-emerald-300">
               <Database className="w-3 h-3 text-emerald-400" />
-              <span>Supabase Connected</span>
+              <span>Supabase Cloud</span>
             </div>
           </div>
         </div>
@@ -111,20 +127,26 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onNavigate, onLoginSucce
           </div>
         )}
 
-        {/* CASE 1: ADMIN EXISTS -> STRICT PASSWORD LOGIN ONLY */}
-        {adminExists ? (
+        {/* LOADING STATE */}
+        {isCheckingCloud ? (
+          <div className="py-10 text-center space-y-3">
+            <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin mx-auto" />
+            <p className="text-xs text-neutral-400">Verifying administrator security with Supabase...</p>
+          </div>
+        ) : adminExists ? (
+          /* CASE 1: ADMIN ACCOUNT EXISTS -> PASSWORD LOGIN ONLY (NO AUTOFILL) */
           <div>
             <div className="flex items-center justify-between mb-4 pb-2 border-b border-white/10">
               <h2 className="text-sm font-bold text-white flex items-center gap-1.5">
                 <Lock className="w-3.5 h-3.5 text-white" />
-                <span>Password Required</span>
+                <span>Master Admin Login</span>
               </h2>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-500/30 bg-emerald-950/40 text-emerald-300">
                 1 Admin Registered
               </span>
             </div>
 
-            <form onSubmit={handleLogin} className="space-y-4">
+            <form onSubmit={handleLogin} className="space-y-4" autoComplete="off">
               <div>
                 <label className="block text-xs font-semibold text-neutral-300 mb-1">
                   Administrator Email
@@ -135,8 +157,13 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onNavigate, onLoginSucce
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="admin@ansanime.com"
+                    placeholder="Enter your admin email"
                     required
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    data-lpignore="true"
+                    data-form-type="other"
                     className="w-full bg-neutral-900 border border-white/15 rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-white placeholder-neutral-500 focus:border-white focus:outline-none"
                   />
                 </div>
@@ -155,6 +182,11 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onNavigate, onLoginSucce
                     placeholder="Enter your master password"
                     required
                     autoFocus
+                    autoComplete="new-password"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    data-lpignore="true"
+                    data-form-type="other"
                     className="w-full bg-neutral-900 border border-white/15 rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-white placeholder-neutral-500 focus:border-white focus:outline-none"
                   />
                 </div>
@@ -168,7 +200,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onNavigate, onLoginSucce
                 {loading ? (
                   <>
                     <div className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                    <span>Verifying with Database...</span>
+                    <span>Verifying Password...</span>
                   </>
                 ) : (
                   <>
@@ -179,12 +211,13 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onNavigate, onLoginSucce
               </button>
             </form>
 
-            <div className="mt-5 pt-4 border-t border-white/10 text-center text-[11px] text-neutral-500">
-              Only the single master admin can access this panel. Public accounts cannot be created.
+            <div className="mt-5 pt-4 border-t border-white/10 text-center text-[11px] text-neutral-400 leading-relaxed">
+              <span className="text-emerald-400 font-semibold">Protected: </span>
+              Registration is permanently closed on all devices. Only you with this password can enter.
             </div>
           </div>
         ) : (
-          /* CASE 2: NO ADMIN REGISTERED YET (FIRST VISIT SETUP) */
+          /* CASE 2: NO ADMIN IN DATABASE (FIRST-TIME INITIAL SETUP ONLY) */
           <div>
             <div className="mb-4 pb-2 border-b border-white/10">
               <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white text-black uppercase tracking-wider inline-block mb-1.5">
@@ -192,11 +225,11 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onNavigate, onLoginSucce
               </span>
               <h2 className="text-base font-bold text-white">Create Master Admin Account</h2>
               <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-                Create your permanent master administrator account. It will be stored in your Supabase database and registration will be locked forever.
+                Create your permanent master administrator account. It will be stored in your Supabase database and registration will be locked forever across all devices.
               </p>
             </div>
 
-            <form onSubmit={handleRegisterFirstAdmin} className="space-y-4">
+            <form onSubmit={handleRegisterFirstAdmin} className="space-y-4" autoComplete="off">
               <div>
                 <label className="block text-xs font-semibold text-neutral-300 mb-1">
                   Admin Email Address *
@@ -207,8 +240,13 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onNavigate, onLoginSucce
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="admin@ansanime.com"
+                    placeholder="Enter admin email"
                     required
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    data-lpignore="true"
+                    data-form-type="other"
                     className="w-full bg-neutral-900 border border-white/15 rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-white placeholder-neutral-500 focus:border-white focus:outline-none"
                   />
                 </div>
@@ -227,6 +265,11 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onNavigate, onLoginSucce
                     placeholder="••••••••"
                     required
                     minLength={6}
+                    autoComplete="new-password"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    data-lpignore="true"
+                    data-form-type="other"
                     className="w-full bg-neutral-900 border border-white/15 rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-white placeholder-neutral-500 focus:border-white focus:outline-none"
                   />
                 </div>
@@ -245,6 +288,11 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onNavigate, onLoginSucce
                     placeholder="••••••••"
                     required
                     minLength={6}
+                    autoComplete="new-password"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    data-lpignore="true"
+                    data-form-type="other"
                     className="w-full bg-neutral-900 border border-white/15 rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-white placeholder-neutral-500 focus:border-white focus:outline-none"
                   />
                 </div>
