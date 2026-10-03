@@ -6,7 +6,8 @@ import {
   getLatestEpisodesFeed, 
   getWatchlist, 
   getAdminSession,
-  logoutAdmin
+  logoutAdmin,
+  initCatalogWithSupabase
 } from './services/dataService';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
@@ -26,10 +27,15 @@ export default function App() {
   const [watchlistTrigger, setWatchlistTrigger] = useState(0);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
 
-  // Initialize data & check URL params
+  // Initialize data & check URL params & subscribe to Supabase
   useEffect(() => {
     const data = loadCatalog();
     setCatalog(data);
+
+    // Live Supabase Cloud Sync & Realtime changes
+    const unsubscribe = initCatalogWithSupabase((fresh) => {
+      setCatalog(fresh);
+    });
 
     // Parse URL params for direct links
     const params = new URLSearchParams(window.location.search);
@@ -45,6 +51,10 @@ export default function App() {
     } else if (viewParam === 'details' && animeParam) {
       setCurrentView({ type: 'anime-details', animeId: animeParam });
     }
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   // Update URL params when view changes with strict Admin Auth Guard

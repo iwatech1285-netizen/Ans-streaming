@@ -24,13 +24,15 @@ import {
   CheckCircle,
   HelpCircle,
   Layers,
-  Video
+  Video,
+  Database
 } from 'lucide-react';
 import { MediaEmbedModal } from './MediaEmbedModal';
 import { AnimeModal } from './AnimeModal';
 import { EpisodeManagerModal } from './EpisodeManagerModal';
 import { AdminEmbedGuideModal } from './AdminEmbedGuideModal';
 import { BackupModal } from './BackupModal';
+import { SupabaseSqlModal } from './SupabaseSqlModal';
 
 interface AdminDashboardProps {
   onNavigate: (view: ViewState) => void;
@@ -52,6 +54,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, onLo
   const [managingEpisodesAnime, setManagingEpisodesAnime] = useState<Anime | null>(null);
   const [isGuideModalOpen, setIsGuideModalOpen] = useState(false);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
+  const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
 
   const [deleteConfirmAnime, setDeleteConfirmAnime] = useState<Anime | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -127,8 +130,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, onLo
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-2 text-xs text-neutral-400">
+            <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-950/40 border border-emerald-500/30 text-[11px] text-emerald-300 font-medium">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>Supabase Cloud (lsuwvqbikhuilfazamgt)</span>
+            </div>
+
+            <div className="hidden sm:flex items-center gap-2 text-xs text-neutral-400">
+              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
               <span className="text-white font-medium truncate max-w-[180px]">
                 {adminSession?.email || 'Master Admin'}
               </span>
@@ -267,6 +275,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, onLo
             >
               <HardDriveDownload className="w-4 h-4 text-emerald-400" />
               <span>Database Backup & Restore</span>
+            </button>
+
+            {/* Supabase SQL Schema & Integration */}
+            <button
+              onClick={() => setIsSqlModalOpen(true)}
+              className="px-3.5 py-2.5 rounded-xl border border-emerald-500/30 hover:border-emerald-500 text-emerald-300 bg-emerald-950/30 hover:bg-emerald-950/60 text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm"
+              title="View & copy Supabase SQL schema"
+            >
+              <Database className="w-4 h-4 text-emerald-400" />
+              <span>Supabase SQL</span>
             </button>
           </div>
         </div>
@@ -501,6 +519,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, onLo
           reloadData();
           showToast('Database updated successfully!');
         }}
+      />
+
+      {/* Supabase SQL Schema Modal */}
+      <SupabaseSqlModal
+        isOpen={isSqlModalOpen}
+        onClose={() => setIsSqlModalOpen(false)}
       />
 
     </div>

@@ -1,14 +1,24 @@
 // ==========================================================================
 // Ans Anime - Data & Media Service Layer
-// Persistent Local & Browser Storage, URL Sanitization, Media Detection
+// Integrated with Supabase Cloud Backend (Project: lsuwvqbikhuilfazamgt)
+// Real-time synchronization, Single-Admin Database Security & Offline Cache
 // ==========================================================================
 
 import { Anime, Episode, AdminUser, AdminSession } from '../types';
 import { deleteStoredVideo } from './videoStorage';
+import { 
+  supabase, 
+  fetchFullCatalogFromSupabase, 
+  upsertAnimeToSupabase, 
+  deleteAnimeFromSupabase, 
+  upsertEpisodeToSupabase, 
+  deleteEpisodeFromSupabase,
+  seedCatalogToSupabase
+} from './supabaseClient';
 
 const STORAGE_CATALOG_KEY = 'ans_anime_catalog_v3';
 const STORAGE_ADMIN_KEY = 'ans_anime_master_admin_v3';
-const STORAGE_SESSION_KEY = 'ans_anime_admin_session_v3';
+const STORAGE_SESSION_KEY = 'ans_anime_admin_active_session_v4';
 const STORAGE_WATCHLIST_KEY = 'ans_anime_watchlist_v3';
 
 // ==========================================
@@ -190,7 +200,7 @@ function getDefaultCatalog(): Anime[] {
 }
 
 // ==========================================
-// Catalog Load / Save
+// Catalog Load / Save & Supabase Sync
 // ==========================================
 export function loadCatalog(): Anime[] {
   try {
@@ -215,8 +225,61 @@ export function saveCatalog(catalog: Anime[]): void {
   }
 }
 
+/**
+ * Initializes Supabase real-time connection and fetches latest catalog from cloud.
+ * Calls onCatalogUpdated whenever Supabase changes (real-time).
+ */
+export function initCatalogWithSupabase(onCatalogUpdated: (catalog: Anime[]) => void): () => void {
+  let isMounted = true;
+
+  // 1. Asynchronously fetch from Supabase
+  fetchFullCatalogFromSupabase().then(async (cloudCatalog) => {
+    if (!isMounted) return;
+    if (cloudCatalog && cloudCatalog.length > 0) {
+      saveCatalog(cloudCatalog);
+      onCatalogUpdated(cloudCatalog);
+    } else if (cloudCatalog && cloudCatalog.length === 0) {
+      // Cloud database exists but is empty -> automatically seed initial anime catalog
+      const current = loadCatalog();
+      await seedCatalogToSupabase(current);
+    }
+  }).catch((err) => {
+    console.warn('Supabase initial fetch skipped (using local cache):', err);
+  });
+
+  // 2. Real-time Subscription for live updates across all devices
+  try {
+    const channel = supabase
+      .channel('ans-anime-realtime-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'animes' }, async () => {
+        const fresh = await fetchFullCatalogFromSupabase();
+        if (fresh && isMounted) {
+          saveCatalog(fresh);
+          onCatalogUpdated(fresh);
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'episodes' }, async () => {
+        const fresh = await fetchFullCatalogFromSupabase();
+        if (fresh && isMounted) {
+          saveCatalog(fresh);
+          onCatalogUpdated(fresh);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
+  } catch {
+    return () => {
+      isMounted = false;
+    };
+  }
+}
+
 // ==========================================
-// Anime CRUD
+// Anime CRUD (Local + Supabase Cloud Sync)
 // ==========================================
 export function getAnimeList(genreFilter: string = 'All', searchQuery: string = ''): Anime[] {
   let list = loadCatalog();
@@ -272,6 +335,10 @@ export function addAnime(animeData: Partial<Anime>): Anime {
   const list = loadCatalog();
   list.unshift(newAnime);
   saveCatalog(list);
+
+  // Sync to Supabase cloud in background
+  upsertAnimeToSupabase(newAnime).catch(() => {});
+
   return newAnime;
 }
 
@@ -289,6 +356,10 @@ export function updateAnime(animeId: string, updates: Partial<Anime>): Anime {
     updatedAt: Date.now(),
   };
   saveCatalog(list);
+
+  // Sync update to Supabase cloud
+  upsertAnimeToSupabase(list[idx]).catch(() => {});
+
   return list[idx];
 }
 
@@ -308,11 +379,15 @@ export function deleteAnime(animeId: string): boolean {
 
   list = list.filter((a) => String(a.id).trim() !== targetId);
   saveCatalog(list);
+
+  // Delete from Supabase cloud
+  deleteAnimeFromSupabase(targetId).catch(() => {});
+
   return true;
 }
 
 // ==========================================
-// Episodes CRUD
+// Episodes CRUD (Local + Supabase Cloud Sync)
 // ==========================================
 export function getEpisodes(animeId: string): Episode[] {
   const anime = getAnimeById(animeId);
@@ -353,6 +428,10 @@ export function addEpisode(animeId: string, episodeData: Partial<Episode>): Epis
   if (!list[animeIdx].episodes) list[animeIdx].episodes = [];
   list[animeIdx].episodes.push(newEp);
   saveCatalog(list);
+
+  // Sync to Supabase cloud in background
+  upsertEpisodeToSupabase(targetAnimeId, newEp).catch(() => {});
+
   return newEp;
 }
 
@@ -370,18 +449,24 @@ export function updateEpisode(animeId: string, episodeId: string, updates: Parti
     throw new Error(`Episode not found with ID: ${targetEpId}`);
   }
 
-  const current = list[animeIdx].episodes[epIdx];
-  const cleanUrl = updates.embedUrl ? sanitizeEmbedUrl(updates.embedUrl) : current.embedUrl;
-  const detectedType = updates.videoType || detectVideoType(cleanUrl);
+  const currentEp = list[animeIdx].episodes[epIdx];
+  const cleanUrl = updates.embedUrl ? sanitizeEmbedUrl(updates.embedUrl) : currentEp.embedUrl;
+  const detectedType = updates.videoType || (updates.embedUrl ? detectVideoType(cleanUrl) : currentEp.videoType);
 
-  list[animeIdx].episodes[epIdx] = {
-    ...current,
+  const updatedEp: Episode = {
+    ...currentEp,
     ...updates,
     embedUrl: cleanUrl,
     videoType: detectedType,
   };
+
+  list[animeIdx].episodes[epIdx] = updatedEp;
   saveCatalog(list);
-  return list[animeIdx].episodes[epIdx];
+
+  // Sync update to Supabase
+  upsertEpisodeToSupabase(targetAnimeId, updatedEp).catch(() => {});
+
+  return updatedEp;
 }
 
 export function deleteEpisode(animeId: string, episodeId: string): boolean {
@@ -389,20 +474,22 @@ export function deleteEpisode(animeId: string, episodeId: string): boolean {
   const targetEpId = String(episodeId).trim();
   const list = loadCatalog();
   const animeIdx = list.findIndex((a) => String(a.id).trim() === targetAnimeId);
-  if (animeIdx !== -1 && list[animeIdx].episodes) {
-    const epToDelete = list[animeIdx].episodes.find((e) => String(e.id).trim() === targetEpId);
-    if (epToDelete && epToDelete.embedUrl && epToDelete.embedUrl.startsWith('local-video://')) {
-      deleteStoredVideo(epToDelete.embedUrl).catch(() => {});
-    }
-    list[animeIdx].episodes = list[animeIdx].episodes.filter((e) => String(e.id).trim() !== targetEpId);
-    saveCatalog(list);
+  if (animeIdx === -1) return false;
+
+  const toDelete = list[animeIdx].episodes.find((e) => String(e.id).trim() === targetEpId);
+  if (toDelete && toDelete.embedUrl && toDelete.embedUrl.startsWith('local-video://')) {
+    deleteStoredVideo(toDelete.embedUrl).catch(() => {});
   }
+
+  list[animeIdx].episodes = list[animeIdx].episodes.filter((e) => String(e.id).trim() !== targetEpId);
+  saveCatalog(list);
+
+  // Delete from Supabase
+  deleteEpisodeFromSupabase(targetEpId).catch(() => {});
+
   return true;
 }
 
-// ==========================================
-// Homepage Latest Releases Feed
-// ==========================================
 export interface LatestEpisodeFeedItem {
   animeId: string;
   animeTitle: string;
@@ -438,9 +525,13 @@ export function getLatestEpisodesFeed(limitCount: number = 8): LatestEpisodeFeed
   return items.sort((a, b) => b.createdAt - a.createdAt).slice(0, limitCount);
 }
 
-// ==========================================
-// Master Admin Security (Single Admin Enforced)
-// ==========================================
+// =========================================================================
+// Master Admin Security (Single Admin Enforced in Supabase & PostgreSQL)
+// =========================================================================
+
+/**
+ * Checks if master admin exists in local cache (sync check for instant UI)
+ */
 export function checkAdminStatus(): { exists: boolean; email?: string } {
   try {
     const raw = localStorage.getItem(STORAGE_ADMIN_KEY);
@@ -456,16 +547,74 @@ export function checkAdminStatus(): { exists: boolean; email?: string } {
   return { exists: false };
 }
 
-export function createFirstAdmin(email: string, password: string): AdminUser {
-  const status = checkAdminStatus();
-  if (status.exists) {
-    throw new Error('Registration is locked. One master admin already exists.');
+/**
+ * Checks Supabase PostgreSQL admin_users table asynchronously
+ */
+export async function checkAdminStatusFromSupabase(): Promise<{ exists: boolean; email?: string }> {
+  try {
+    const { data, error } = await supabase
+      .from('admin_users')
+      .select('id, email')
+      .eq('id', 'master_admin')
+      .maybeSingle();
+
+    if (!error && data && data.email) {
+      // Keep local cache in sync
+      localStorage.setItem(STORAGE_ADMIN_KEY, JSON.stringify({ email: data.email, createdAt: Date.now() }));
+      return { exists: true, email: data.email };
+    }
+  } catch (err) {
+    console.warn('Supabase admin check skipped:', err);
+  }
+  return checkAdminStatus();
+}
+
+/**
+ * Creates the single master admin.
+ * Enforced at PostgreSQL level: primary key 'master_admin' guarantees that
+ * ONLY ONE master admin can EVER exist in the entire database.
+ */
+export async function createFirstAdmin(email: string, password: string): Promise<AdminUser> {
+  const cleanEmail = email.trim().toLowerCase();
+  const passwordHash = btoa(password);
+
+  // 1. Check Supabase first
+  try {
+    const { data: existing } = await supabase
+      .from('admin_users')
+      .select('id, email')
+      .eq('id', 'master_admin')
+      .maybeSingle();
+
+    if (existing && existing.email) {
+      throw new Error('Registration is permanently locked. A master administrator account already exists.');
+    }
+
+    // Insert with fixed primary key 'master_admin'
+    const { error: insertErr } = await supabase.from('admin_users').insert({
+      id: 'master_admin',
+      email: cleanEmail,
+      password_hash: passwordHash,
+      created_at: Date.now(),
+    });
+
+    if (insertErr) {
+      if (insertErr.code === '23505' || insertErr.message.includes('unique') || insertErr.message.includes('duplicate')) {
+        throw new Error('Registration is locked. A master admin account already exists.');
+      }
+      console.warn('Supabase insert warning:', insertErr.message);
+    }
+  } catch (err: any) {
+    if (err.message && err.message.includes('locked')) {
+      throw err;
+    }
+    console.warn('Supabase admin check fallback:', err);
   }
 
-  const cleanEmail = email.trim().toLowerCase();
+  // 2. Also save to local backup
   const newAdmin: AdminUser = {
     email: cleanEmail,
-    passwordHash: btoa(password),
+    passwordHash,
     createdAt: Date.now(),
   };
 
@@ -474,29 +623,47 @@ export function createFirstAdmin(email: string, password: string): AdminUser {
   return newAdmin;
 }
 
-export function resetAdminCredentials(email: string, newPassword: string): AdminUser {
+/**
+ * Authenticates admin credentials against Supabase cloud database
+ */
+export async function loginAdmin(email: string, password: string): Promise<AdminSession> {
   const cleanEmail = email.trim().toLowerCase();
-  const newAdmin: AdminUser = {
-    email: cleanEmail,
-    passwordHash: btoa(newPassword),
-    createdAt: Date.now(),
-  };
+  const passwordHash = btoa(password);
 
-  localStorage.setItem(STORAGE_ADMIN_KEY, JSON.stringify(newAdmin));
-  setAdminSession({ email: cleanEmail, timestamp: Date.now() });
-  return newAdmin;
-}
+  let authenticated = false;
 
-export function loginAdmin(email: string, password: string): AdminSession {
-  const raw = localStorage.getItem(STORAGE_ADMIN_KEY);
-  if (!raw) {
-    throw new Error('No administrator account exists yet. Create the master admin account first.');
+  // 1. Check against Supabase cloud database
+  try {
+    const { data: adminRow, error } = await supabase
+      .from('admin_users')
+      .select('id, email, password_hash')
+      .eq('id', 'master_admin')
+      .maybeSingle();
+
+    if (!error && adminRow) {
+      if (adminRow.email === cleanEmail && adminRow.password_hash === passwordHash) {
+        authenticated = true;
+      } else {
+        throw new Error('Invalid email or master password.');
+      }
+    }
+  } catch (err: any) {
+    if (err.message && err.message.includes('Invalid email')) {
+      throw err;
+    }
+    console.warn('Supabase auth fallback:', err);
   }
-  const admin: AdminUser = JSON.parse(raw);
-  const cleanEmail = email.trim().toLowerCase();
 
-  if (admin.email !== cleanEmail || admin.passwordHash !== btoa(password)) {
-    throw new Error('Invalid email or password.');
+  // 2. If Supabase table doesn't exist yet or is offline, check local storage
+  if (!authenticated) {
+    const raw = localStorage.getItem(STORAGE_ADMIN_KEY);
+    if (!raw) {
+      throw new Error('No administrator account exists yet. Create the master admin account first.');
+    }
+    const admin: AdminUser = JSON.parse(raw);
+    if (admin.email !== cleanEmail || admin.passwordHash !== passwordHash) {
+      throw new Error('Invalid email or password.');
+    }
   }
 
   const session: AdminSession = { email: cleanEmail, timestamp: Date.now() };
@@ -506,12 +673,11 @@ export function loginAdmin(email: string, password: string): AdminSession {
 
 export function getAdminSession(): AdminSession | null {
   try {
-    // Session is stored in sessionStorage so closing or opening site always requires password!
     const raw = sessionStorage.getItem(STORAGE_SESSION_KEY);
     if (!raw) return null;
     const session: AdminSession = JSON.parse(raw);
-    // 2-hour session expiration
-    if (Date.now() - session.timestamp > 2 * 60 * 60 * 1000) {
+    // 4-hour session expiration
+    if (Date.now() - session.timestamp > 4 * 60 * 60 * 1000) {
       sessionStorage.removeItem(STORAGE_SESSION_KEY);
       return null;
     }
@@ -528,7 +694,7 @@ export function setAdminSession(session: AdminSession | null): void {
     } else {
       sessionStorage.removeItem(STORAGE_SESSION_KEY);
     }
-    // Also remove from localStorage if any legacy key exists
+    // Clean up legacy keys
     localStorage.removeItem(STORAGE_SESSION_KEY);
     localStorage.removeItem('ans_anime_admin_session_v3');
     localStorage.removeItem('ans_anime_admin_session_v2');
@@ -585,11 +751,14 @@ export function importCatalogJson(jsonString: string): Anime[] {
     throw new Error('Invalid catalog format. Must be an array of anime objects.');
   }
   saveCatalog(parsed);
+  // Also push imported catalog to Supabase in background
+  seedCatalogToSupabase(parsed).catch(() => {});
   return parsed;
 }
 
 export function resetToDefaultCatalog(): Anime[] {
   const defaults = getDefaultCatalog();
   saveCatalog(defaults);
+  seedCatalogToSupabase(defaults).catch(() => {});
   return defaults;
 }

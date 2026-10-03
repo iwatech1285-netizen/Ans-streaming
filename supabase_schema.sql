@@ -1,23 +1,3 @@
-# Ans Anime — Supabase Cloud Backend & Admin Guide
-
----
-
-## ⚡ Supabase Cloud Backend Connected
-
-- **Supabase Project URL**: `https://lsuwvqbikhuilfazamgt.supabase.co`
-- **Publishable Key**: `sb_publishable_whwZSa5CDB1iWpuuCXm5wg_EX3d10XU`
-- **Realtime Sync**: Enabled on `animes` and `episodes` tables. Any anime or episode you create, edit, or delete in the Admin Panel immediately updates on the live website across all devices without needing a refresh.
-
----
-
-## 🛠️ Step 1: Run the SQL Schema in Supabase (Takes 30 seconds)
-
-1. Open your Supabase Dashboard:
-   **[https://supabase.com/dashboard/project/lsuwvqbikhuilfazamgt/sql/new](https://supabase.com/dashboard/project/lsuwvqbikhuilfazamgt/sql/new)**
-2. Copy and paste the SQL script below into the query editor.
-3. Click the green **"Run"** button.
-
-```sql
 -- ============================================================================
 -- Ans Anime - Complete Supabase PostgreSQL Schema & Security Rules
 -- Run this script in your Supabase SQL Editor:
@@ -81,34 +61,41 @@ DROP POLICY IF EXISTS "Allow insert on admin_users" ON public.admin_users;
 DROP POLICY IF EXISTS "Allow update on admin_users" ON public.admin_users;
 
 -- 6. RLS Policies for Animes
+-- Anyone can view the anime catalog
 CREATE POLICY "Allow public read on animes" 
   ON public.animes FOR SELECT 
   USING (true);
 
+-- Allow inserting, updating, and deleting animes
 CREATE POLICY "Allow public write on animes" 
   ON public.animes FOR ALL 
   USING (true)
   WITH CHECK (true);
 
 -- 7. RLS Policies for Episodes
+-- Anyone can view episodes
 CREATE POLICY "Allow public read on episodes" 
   ON public.episodes FOR SELECT 
   USING (true);
 
+-- Allow inserting, updating, and deleting episodes
 CREATE POLICY "Allow public write on episodes" 
   ON public.episodes FOR ALL 
   USING (true)
   WITH CHECK (true);
 
 -- 8. RLS Policies for Admin Users
+-- Anyone can read admin status to verify if master admin is registered
 CREATE POLICY "Allow read on admin_users" 
   ON public.admin_users FOR SELECT 
   USING (true);
 
+-- Allow initial master admin creation (Primary key 'master_admin' guarantees max 1 row)
 CREATE POLICY "Allow insert on admin_users" 
   ON public.admin_users FOR INSERT 
   WITH CHECK (id = 'master_admin');
 
+-- Allow admin password update
 CREATE POLICY "Allow update on admin_users" 
   ON public.admin_users FOR UPDATE 
   USING (id = 'master_admin')
@@ -128,28 +115,3 @@ BEGIN
     NULL;
   END;
 END $$;
-```
-
----
-
-## 🔒 Master Admin Security: Single Admin Guarantee
-
-1. **Database-Level Primary Key Restriction**:
-   - The `admin_users` table uses `id TEXT PRIMARY KEY DEFAULT 'master_admin'`.
-   - When you create your master administrator account, the row is inserted with `id = 'master_admin'`.
-   - If anyone else in the public tries to register a second account, PostgreSQL automatically throws a unique primary key violation (`23505`).
-2. **Password Verification**:
-   - Your master password is saved securely in Supabase.
-   - When accessing the Admin Panel, the app queries Supabase and compares the password hash.
-   - Only you with the correct password can unlock the admin panel.
-   - Public visitors cannot log in and cannot register.
-
----
-
-## 📺 How to Add Video Streams in Admin Panel
-
-1. **Option 1: Paste Embed Link or `<iframe>`**:
-   - Paste any YouTube link, Google Drive preview link, Vimeo link, or third-party embed (Streamtape, DoodStream, Mega, Vidcloud, etc.).
-   - Full `<iframe>` tags are automatically parsed and sanitized.
-2. **Option 2: Direct Video File Upload**:
-   - Upload `.mp4`, `.webm`, or `.mkv` files directly.

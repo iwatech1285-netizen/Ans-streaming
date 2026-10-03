@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { ViewState } from '../types';
-import { checkAdminStatus, createFirstAdmin, loginAdmin } from '../services/dataService';
-import { Play, Shield, Lock, Mail, ArrowLeft, AlertCircle } from 'lucide-react';
+import { checkAdminStatus, checkAdminStatusFromSupabase, createFirstAdmin, loginAdmin } from '../services/dataService';
+import { Play, Shield, Lock, Mail, ArrowLeft, AlertCircle, Database, Code } from 'lucide-react';
+import { SupabaseSqlModal } from './SupabaseSqlModal';
 
 interface AdminLoginProps {
   onNavigate: (view: ViewState) => void;
@@ -15,32 +16,41 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onNavigate, onLoginSucce
   const [confirmPassword, setConfirmPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
 
   useEffect(() => {
-    // Check if master admin exists
-    const status = checkAdminStatus();
-    setAdminExists(status.exists);
-    if (status.email) {
-      setEmail(status.email);
+    // 1. Instant check from local cache
+    const cached = checkAdminStatus();
+    if (cached.exists) {
+      setAdminExists(true);
+      if (cached.email) setEmail(cached.email);
     }
+
+    // 2. Cloud check from Supabase PostgreSQL database
+    checkAdminStatusFromSupabase().then((status) => {
+      setAdminExists(status.exists);
+      if (status.email) {
+        setEmail(status.email);
+      }
+    }).catch(() => {});
   }, []);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     setLoading(true);
 
     try {
-      loginAdmin(email, password);
+      await loginAdmin(email, password);
       setLoading(false);
       onLoginSuccess();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Incorrect password or email.');
+      setErrorMsg(err.message || 'Incorrect password or administrator email.');
       setLoading(false);
     }
   };
 
-  const handleRegisterFirstAdmin = (e: React.FormEvent) => {
+  const handleRegisterFirstAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
 
@@ -55,7 +65,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onNavigate, onLoginSucce
 
     setLoading(true);
     try {
-      createFirstAdmin(email, password);
+      await createFirstAdmin(email, password);
       setAdminExists(true);
       setLoading(false);
       onLoginSuccess();
@@ -79,9 +89,17 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onNavigate, onLoginSucce
               Ans <span className="text-neutral-400">Anime</span>
             </span>
           </div>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 border border-white/15 text-[11px] font-semibold text-neutral-300 mt-1">
-            <Shield className="w-3 h-3 text-white" />
-            <span>Protected Admin Area</span>
+
+          <div className="flex items-center justify-center gap-2 mt-1">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 border border-white/15 text-[11px] font-semibold text-neutral-300">
+              <Shield className="w-3 h-3 text-white" />
+              <span>Protected Admin Area</span>
+            </div>
+
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-950/60 border border-emerald-500/30 text-[11px] font-semibold text-emerald-300">
+              <Database className="w-3 h-3 text-emerald-400" />
+              <span>Supabase Connected</span>
+            </div>
           </div>
         </div>
 
@@ -101,7 +119,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onNavigate, onLoginSucce
                 <Lock className="w-3.5 h-3.5 text-white" />
                 <span>Password Required</span>
               </h2>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-white/20 bg-white/5 text-neutral-300">
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-500/30 bg-emerald-950/40 text-emerald-300">
                 1 Admin Registered
               </span>
             </div>
@@ -150,7 +168,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onNavigate, onLoginSucce
                 {loading ? (
                   <>
                     <div className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                    <span>Verifying Password...</span>
+                    <span>Verifying with Database...</span>
                   </>
                 ) : (
                   <>
@@ -162,7 +180,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onNavigate, onLoginSucce
             </form>
 
             <div className="mt-5 pt-4 border-t border-white/10 text-center text-[11px] text-neutral-500">
-              Access is restricted. Enter your master password to unlock the admin dashboard.
+              Only the single master admin can access this panel. Public accounts cannot be created.
             </div>
           </div>
         ) : (
@@ -174,7 +192,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onNavigate, onLoginSucce
               </span>
               <h2 className="text-base font-bold text-white">Create Master Admin Account</h2>
               <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-                No administrator exists yet. Create your permanent master administrator account and password now to secure the site.
+                Create your permanent master administrator account. It will be stored in your Supabase database and registration will be locked forever.
               </p>
             </div>
 
@@ -235,26 +253,47 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onNavigate, onLoginSucce
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-neutral-200 text-black font-bold text-xs tracking-wider uppercase transition-all shadow-[0_4px_16px_rgba(255,255,255,0.2)] disabled:opacity-50 mt-2"
+                className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-neutral-200 text-black font-bold text-xs tracking-wider uppercase transition-all shadow-[0_4px_16px_rgba(255,255,255,0.2)] disabled:opacity-50 mt-2 flex items-center justify-center gap-2"
               >
-                {loading ? 'Creating Master Admin...' : 'Create Admin & Set Password'}
+                {loading ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                    <span>Saving to Database...</span>
+                  </>
+                ) : (
+                  <span>Create Admin & Lock Registration</span>
+                )}
               </button>
             </form>
           </div>
         )}
 
-        {/* Back to public site button */}
-        <div className="mt-6 pt-4 border-t border-white/10 text-center">
+        {/* Action row: Back to public site + Supabase SQL Modal */}
+        <div className="mt-6 pt-4 border-t border-white/10 flex items-center justify-between text-xs text-neutral-400">
           <button
             onClick={() => onNavigate({ type: 'home' })}
-            className="text-xs text-neutral-400 hover:text-white inline-flex items-center gap-1.5 transition-colors"
+            className="hover:text-white inline-flex items-center gap-1.5 transition-colors"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>Return to Public Site</span>
           </button>
+
+          <button
+            onClick={() => setIsSqlModalOpen(true)}
+            className="hover:text-white inline-flex items-center gap-1 text-[11px] text-neutral-400 hover:text-emerald-300 transition-colors"
+          >
+            <Code className="w-3.5 h-3.5" />
+            <span>Supabase SQL</span>
+          </button>
         </div>
 
       </div>
+
+      {/* Supabase SQL Code Modal */}
+      <SupabaseSqlModal
+        isOpen={isSqlModalOpen}
+        onClose={() => setIsSqlModalOpen(false)}
+      />
     </div>
   );
 };
