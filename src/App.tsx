@@ -20,6 +20,7 @@ import { AdminLogin } from './components/AdminLogin';
 import { AdminEmbedGuideModal } from './components/AdminEmbedGuideModal';
 import { AdsterraAds } from './components/AdsterraAds';
 import { AdsterraBanner300x250 } from './components/AdsterraBanner300x250';
+import { AdsterraNativeBanner } from './components/AdsterraNativeBanner';
 import { Play, Sparkles, Film, ArrowRight, Video } from 'lucide-react';
 
 export default function App() {
@@ -236,6 +237,9 @@ export default function App() {
                 </div>
               )}
             </section>
+
+            {/* Adsterra Native Banner Recommendations */}
+            <AdsterraNativeBanner label="Trending & Recommended" className="my-8" />
 
           </div>
         )}

@@ -3,6 +3,7 @@ import { Anime, Episode, ViewState } from '../types';
 import { getAnimeById, getEpisodes, getWatchlist, toggleWatchlist } from '../services/dataService';
 import { Play, Bookmark, ArrowLeft, Film, Layers } from 'lucide-react';
 import { AdsterraBanner300x250 } from './AdsterraBanner300x250';
+import { AdsterraNativeBanner } from './AdsterraNativeBanner';
 
 interface AnimeDetailsProps {
   animeId: string;
@@ -171,8 +172,11 @@ export const AnimeDetails: React.FC<AnimeDetailsProps> = ({ animeId, onNavigate,
         )}
       </section>
 
+      {/* Adsterra Native Banner Recommendations */}
+      <AdsterraNativeBanner label="Recommended For You" className="mt-8" />
+
       {/* Adsterra 300x250 Banner Ad */}
-      <AdsterraBanner300x250 label="Sponsored Recommendation" className="mt-8" />
+      <AdsterraBanner300x250 label="Sponsored Partner" className="mt-4" />
 
     </div>
   );

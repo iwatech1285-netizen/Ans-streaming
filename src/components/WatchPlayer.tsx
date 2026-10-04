@@ -18,6 +18,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { AdsterraBanner300x250 } from './AdsterraBanner300x250';
+import { AdsterraNativeBanner } from './AdsterraNativeBanner';
 
 interface WatchPlayerProps {
   animeId: string;
@@ -344,6 +345,9 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({ animeId, episodeId, on
               </p>
             </div>
           </div>
+
+          {/* Adsterra Native Banner Recommendations */}
+          <AdsterraNativeBanner label="Sponsored Recommendations" />
 
         </div>
 
